@@ -28,7 +28,10 @@ FLAG_PREFIX = "CONUS/PrecipFlag_00.00"
 # Real snowfall tops out ~5 mm/hr liquid; real ice pellets ~8 mm/hr.
 # Anything above this threshold is almost certainly misclassified hail or
 # heavy convective rain — force those pixels to the rain layer.
-WINTRY_RATE_MAX = 15.0  # mm/hr
+WINTRY_RATE_MAX = 15.0  # mm/hr (internal threshold, raw data units)
+
+# Unit conversion: all display values are in inches
+MM_TO_IN = 1.0 / 25.4
 
 # --- SESSION SETUP ---
 session = requests.Session()
@@ -46,22 +49,22 @@ def merc_to_lat(y):
     """Converts normalised Mercator Y back to latitude."""
     return np.degrees(2 * np.arctan(np.exp(y)) - np.pi / 2)
 
-# --- COLOR TABLES: PRECIPITATION RATE ---
-RAIN_BOUNDS = [0.1, 0.5, 1.5, 3.0, 5.1, 12.7, 25.4, 38.1, 50.8, 76.2, 127.0]  # mm/hr
-SNOW_BOUNDS = [0.1, 0.3, 0.5, 1.0, 2.5, 6.0]                                    # mm/hr
-ICE_BOUNDS  = [0.1, 0.3, 0.5, 1.0, 2.5, 6.0]                                    # mm/hr
+# --- COLOR TABLES: PRECIPITATION RATE (all bounds in in/hr) ---
+RAIN_BOUNDS = [0.01, 0.02, 0.06, 0.12, 0.20, 0.50, 1.00, 1.50, 2.00, 3.00, 5.00]  # in/hr
+SNOW_BOUNDS = [0.004, 0.01, 0.02, 0.04, 0.10, 0.24]                                 # in/hr
+ICE_BOUNDS  = [0.004, 0.01, 0.02, 0.04, 0.10, 0.24]                                 # in/hr
 
 RAIN_COLORS = [
-    '#00fb90',  # 0.1  – 0.5   mm/hr : mint / light green
-    '#00cc00',  # 0.5  – 1.5   mm/hr : medium-light green
-    '#009900',  # 1.5  – 3.0   mm/hr : medium green
-    '#006600',  # 3.0  – 5.1   mm/hr : dark green
-    '#ffff00',  # 5.1  – 12.7  mm/hr : bright yellow
-    '#ffcc00',  # 12.7 – 25.4  mm/hr : amber
-    '#ff9100',  # 25.4 – 38.1  mm/hr : orange
-    '#ff5500',  # 38.1 – 50.8  mm/hr : red-orange
-    '#ff0000',  # 50.8 – 76.2  mm/hr : red
-    '#cc0000',  # 76.2 – 127   mm/hr : dark red
+    '#00fb90',  # 0.01 – 0.02  in/hr : mint / light green
+    '#00cc00',  # 0.02 – 0.06  in/hr : medium-light green
+    '#009900',  # 0.06 – 0.12  in/hr : medium green
+    '#006600',  # 0.12 – 0.20  in/hr : dark green
+    '#ffff00',  # 0.20 – 0.50  in/hr : bright yellow
+    '#ffcc00',  # 0.50 – 1.00  in/hr : amber
+    '#ff9100',  # 1.00 – 1.50  in/hr : orange
+    '#ff5500',  # 1.50 – 2.00  in/hr : red-orange
+    '#ff0000',  # 2.00 – 3.00  in/hr : red
+    '#cc0000',  # 3.00 – 5.00  in/hr : dark red
 ]
 SNOW_COLORS = ['#00ffff', '#80ffff', '#ffffff', '#adc5ff', '#5a82ff']
 ICE_COLORS  = ['#ff00ff', '#d100d1', '#910091', '#4b0082', '#2d004b']
@@ -82,57 +85,62 @@ def get_cmap_norm(p_type):
 # --- COLOR TABLES: SINGLE-FIELD PRODUCTS ---
 # Each entry: prefix, bounds (N+1 values for N color intervals), colors (N values),
 # min_val (display threshold), max_val (fill-value cap).
+# Optional 'conversion': multiply raw GRIB2 value (mm) by this factor before
+# applying bounds/min_val/max_val. Use MM_TO_IN (1/25.4) for inch-display products.
 SINGLE_PRODUCTS = {
     'mesh': {
         'prefix': 'CONUS/MESH_00.50',
-        'bounds': [5, 10, 15, 20, 25, 30, 40, 50, 65],   # mm hail diameter
+        'bounds': [0.25, 0.50, 0.75, 1.00, 1.50, 1.75, 2.00, 2.50, 3.00],  # inches hail diameter
         'colors': [
-            '#c8f500',  # 5-10 mm  : lime-yellow (pea hail)
-            '#ffff00',  # 10-15 mm : bright yellow
-            '#ffd700',  # 15-20 mm : gold
-            '#ff8c00',  # 20-25 mm : dark orange
-            '#ff4500',  # 25-30 mm : red-orange
-            '#ff0000',  # 30-40 mm : red
-            '#cc0000',  # 40-50 mm : dark red
-            '#7f0000',  # 50-65 mm : deep red (baseball-size)
+            '#c8f500',  # 0.25–0.50 in (~pea)     : lime-yellow
+            '#ffff00',  # 0.50–0.75 in (~marble)   : bright yellow
+            '#ffd700',  # 0.75–1.00 in             : gold
+            '#ff8c00',  # 1.00–1.50 in (~quarter)  : dark orange
+            '#ff4500',  # 1.50–1.75 in             : red-orange
+            '#ff0000',  # 1.75–2.00 in (~golf ball): red
+            '#cc0000',  # 2.00–2.50 in             : dark red
+            '#7f0000',  # 2.50–3.00 in (~baseball) : deep red
         ],
-        'min_val': 5.0,
-        'max_val': 200.0,
-        'label': 'Max Estimated Hail Size (mm)',
+        'min_val': 0.20,   # inches (~5 mm)
+        'max_val': 8.0,    # inches (~200 mm fill-value cap)
+        'conversion': MM_TO_IN,
+        'label': 'Max Estimated Hail Size (in)',
     },
     'qpe6h': {
         'prefix': 'CONUS/RadarOnly_QPE_06H_00.00',
-        'bounds': [1, 5, 10, 25, 50, 75, 100, 150, 200],  # mm accumulated
+        'bounds': [0.05, 0.25, 0.50, 1.00, 2.00, 3.00, 4.00, 6.00, 8.00],  # inches accumulated
         'colors': [
-            '#00fb90',  # 1-5 mm
-            '#00cc00',  # 5-10 mm
-            '#009900',  # 10-25 mm
-            '#006600',  # 25-50 mm
-            '#ffff00',  # 50-75 mm
-            '#ffcc00',  # 75-100 mm
-            '#ff9100',  # 100-150 mm
-            '#ff0000',  # 150-200 mm
+            '#00fb90',  # 0.05–0.25 in : mint
+            '#00cc00',  # 0.25–0.50 in : green
+            '#009900',  # 0.50–1.00 in : medium green
+            '#006600',  # 1.00–2.00 in : dark green
+            '#ffff00',  # 2.00–3.00 in : yellow
+            '#ffcc00',  # 3.00–4.00 in : amber
+            '#ff9100',  # 4.00–6.00 in : orange
+            '#ff0000',  # 6.00–8.00 in : red
         ],
-        'min_val': 1.0,
-        'max_val': 1000.0,
-        'label': '6-Hour QPE (mm)',
+        'min_val': 0.04,   # inches (~1 mm)
+        'max_val': 40.0,   # inches (~1000 mm fill-value cap)
+        'conversion': MM_TO_IN,
+        'label': '6-Hour QPE (in)',
     },
     'qpe24h': {
         'prefix': 'CONUS/RadarOnly_QPE_24H_00.00',
-        'bounds': [5, 25, 50, 75, 100, 150, 200, 300, 400],  # mm accumulated
+        'bounds': [0.25, 1.00, 2.00, 3.00, 4.00, 6.00, 8.00, 12.00, 16.00],  # inches accumulated
         'colors': [
-            '#00fb90',  # 5-25 mm
-            '#00cc00',  # 25-50 mm
-            '#009900',  # 50-75 mm
-            '#006600',  # 75-100 mm
-            '#ffff00',  # 100-150 mm
-            '#ffcc00',  # 150-200 mm
-            '#ff9100',  # 200-300 mm
-            '#ff0000',  # 300-400 mm
+            '#00fb90',  # 0.25–1.00 in  : mint
+            '#00cc00',  # 1.00–2.00 in  : green
+            '#009900',  # 2.00–3.00 in  : medium green
+            '#006600',  # 3.00–4.00 in  : dark green
+            '#ffff00',  # 4.00–6.00 in  : yellow
+            '#ffcc00',  # 6.00–8.00 in  : amber
+            '#ff9100',  # 8.00–12.00 in : orange
+            '#ff0000',  # 12.0–16.00 in : red
         ],
-        'min_val': 5.0,
-        'max_val': 2000.0,
-        'label': '24-Hour QPE (mm)',
+        'min_val': 0.20,   # inches (~5 mm)
+        'max_val': 80.0,   # inches (~2000 mm fill-value cap)
+        'conversion': MM_TO_IN,
+        'label': '24-Hour QPE (in)',
     },
     'refl': {
         'prefix': 'CONUS/MergedBaseReflectivity_00.50',
@@ -156,6 +164,40 @@ SINGLE_PRODUCTS = {
         'min_val': 0.0,
         'max_val': 80.0,
         'label': 'Base Reflectivity (dBZ)',
+    },
+    'lightning': {
+        'prefix': 'CONUS/LightningProbabilityNext60minGrid_scale_1',
+        'bounds': [5, 10, 20, 30, 40, 50, 60, 75, 90],  # percent probability
+        'colors': [
+            '#ffffb2',  # 5-10%  : pale yellow
+            '#fed976',  # 10-20% : light yellow-orange
+            '#feb24c',  # 20-30% : orange
+            '#fd8d3c',  # 30-40% : darker orange
+            '#fc4e2a',  # 40-50% : red-orange
+            '#e31a1c',  # 50-60% : red
+            '#bd0026',  # 60-75% : dark red
+            '#800026',  # 75-90% : deep red
+        ],
+        'min_val': 5.0,
+        'max_val': 100.0,
+        'label': '1-Hr CG Lightning Probability (%)',
+    },
+    'rotation': {
+        'prefix': 'CONUS/RotationTrack30min_00.50',
+        'bounds': [0.003, 0.005, 0.008, 0.012, 0.016, 0.020, 0.030, 0.040, 0.050],  # s^-1
+        'colors': [
+            '#00ff00',  # 0.003–0.005 s⁻¹ : bright green  (weak rotation)
+            '#80ff00',  # 0.005–0.008 s⁻¹ : yellow-green
+            '#ffff00',  # 0.008–0.012 s⁻¹ : yellow
+            '#ff8000',  # 0.012–0.016 s⁻¹ : orange
+            '#ff0000',  # 0.016–0.020 s⁻¹ : red
+            '#c00000',  # 0.020–0.030 s⁻¹ : dark red      (strong rotation)
+            '#ff00ff',  # 0.030–0.040 s⁻¹ : magenta
+            '#8000ff',  # 0.040–0.050 s⁻¹ : purple        (tornadic)
+        ],
+        'min_val': 0.002,
+        'max_val': 0.5,
+        'label': '30-Min Rotation Track (s\u207b\u00b9)',
     },
 }
 
@@ -443,14 +485,15 @@ def process_frame(rate_key, flag_keys):
             untyped_with_rate = has_precip & np.isin(flag_vals, [7, 10])
             rain_mask |= untyped_with_rate
 
-        high_rate  = rate_vals > WINTRY_RATE_MAX
+        high_rate  = rate_vals > WINTRY_RATE_MAX  # threshold in mm/hr (raw data)
         rain_mask |= (snow_mask | ice_mask) & high_rate
         snow_mask &= ~high_rate
         ice_mask  &= ~high_rate
 
-        rain = np.where(rain_mask, rate_vals, np.nan)
-        snow = np.where(snow_mask, rate_vals, np.nan)
-        ice  = np.where(ice_mask,  rate_vals, np.nan)
+        # Convert mm/hr → in/hr for display; RAIN/SNOW/ICE_BOUNDS are in inches
+        rain = np.where(rain_mask, rate_vals * MM_TO_IN, np.nan)
+        snow = np.where(snow_mask, rate_vals * MM_TO_IN, np.nan)
+        ice  = np.where(ice_mask,  rate_vals * MM_TO_IN, np.nan)
 
         fig = plt.figure(figsize=(width_px / 100, height_px / 100), dpi=100)
         ax  = fig.add_axes([0, 0, 1, 1], frameon=False)
@@ -463,11 +506,11 @@ def process_frame(rate_key, flag_keys):
         snow_cmap, snow_norm = get_cmap_norm('snow')
         ice_cmap,  ice_norm  = get_cmap_norm('ice')
 
-        if np.any(rain > 0.1):
+        if np.any(rain > RAIN_BOUNDS[0]):
             ax.imshow(rain, cmap=rain_cmap, norm=rain_norm, **plot_args)
-        if np.any(snow > 0.1):
+        if np.any(snow > SNOW_BOUNDS[0]):
             ax.imshow(snow, cmap=snow_cmap, norm=snow_norm, **plot_args)
-        if np.any(ice > 0.1):
+        if np.any(ice > ICE_BOUNDS[0]):
             ax.imshow(ice,  cmap=ice_cmap,  norm=ice_norm,  **plot_args)
 
         plt.savefig(os.path.join(OUTPUT_DIR, "master.png"), transparent=True, pad_inches=0)
@@ -519,8 +562,14 @@ def process_single_field_frame(key, product_key, product_cfg):
         )
         vals = warped.values.astype(float)
 
+        # Apply unit conversion if specified (e.g. mm → inches for precip products)
+        conversion = product_cfg.get('conversion', 1.0)
+        if conversion != 1.0:
+            vals = vals * conversion
+
         # Mask fill values and below-threshold values; anything unrealistically
         # large is a fill value (MRMS uses 9.99e+20 for missing data).
+        # min_val/max_val are in the same units as the (optionally converted) vals.
         min_val = product_cfg['min_val']
         max_val = product_cfg['max_val']
         vals[(vals < min_val) | (vals > max_val)] = np.nan
