@@ -183,7 +183,7 @@ SINGLE_PRODUCTS = {
         'label': '1-Hr CG Lightning Probability (%)',
     },
     'rotation': {
-        'prefix': 'CONUS/RotationTrack30min_00.50',
+        'prefix': 'CONUS/MergedAzShear_0-2kmAGL_00.50',
         'bounds': [0.003, 0.005, 0.008, 0.012, 0.016, 0.020, 0.030, 0.040, 0.050],  # s^-1
         'colors': [
             '#00ff00',  # 0.003–0.005 s⁻¹ : bright green  (weak rotation)
