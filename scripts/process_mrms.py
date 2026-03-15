@@ -183,8 +183,8 @@ SINGLE_PRODUCTS = {
         'label': '1-Hr CG Lightning Probability (%)',
     },
     'rotation': {
-        'prefix': 'CONUS/RotationTrack30min_00.50',
-        'bounds': [0.003, 0.005, 0.008, 0.012, 0.016, 0.020, 0.030, 0.040, 0.050],  # s^-1
+        'prefix': 'CONUS/MergedAzShear_00.50-2.00deg',
+        'bounds': [0.003, 0.005, 0.008, 0.012, 0.016, 0.020, 0.030, 0.040, 0.050],  # s⁻¹
         'colors': [
             '#00ff00',  # 0.003–0.005 s⁻¹ : bright green  (weak rotation)
             '#80ff00',  # 0.005–0.008 s⁻¹ : yellow-green
@@ -195,12 +195,15 @@ SINGLE_PRODUCTS = {
             '#ff00ff',  # 0.030–0.040 s⁻¹ : magenta
             '#8000ff',  # 0.040–0.050 s⁻¹ : purple        (tornadic)
         ],
-        # Rotation tracks store signed azimuthal shear (+ cyclonic, − anti-cyclonic).
-        # use_abs=True takes np.abs() so both directions are rendered.
+        # Raw GRIB2 values are integers in units of 10⁻³ s⁻¹ (e.g. raw 5 = 0.005 s⁻¹).
+        # Multiply by 0.001 to convert to s⁻¹ before applying bounds/min_val/max_val.
+        'conversion': 0.001,
+        # AzShear stores signed values (+ cyclonic, − anti-cyclonic).
+        # use_abs=True renders both directions on the same colour scale.
         'use_abs': True,
-        'min_val': 0.002,   # s⁻¹ — threshold below which rotation is noise
-        'max_val': 1.0,     # s⁻¹ — generous cap; fills are stripped earlier via 1e10 check
-        'label': '30-Min Rotation Track (s\u207b\u00b9)',
+        'min_val': 0.002,   # s⁻¹ — below this is noise
+        'max_val': 1.0,     # s⁻¹ — generous cap; gross fills stripped earlier (>1e10)
+        'label': 'Azimuthal Shear (s\u207b\u00b9)',
     },
 }
 

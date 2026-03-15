@@ -116,7 +116,7 @@
         <!-- Product selector row 2 -->
         <div class="selector-row">
             <button class="selector-btn" data-product="lightning">Lightning</button>
-            <button class="selector-btn" data-product="rotation">Rotation</button>
+            <button class="selector-btn" data-product="rotation">Az Shear</button>
         </div>
 
         <!-- Map type selector -->
@@ -181,11 +181,11 @@
                 ]
             },
             rotation: {
-                label: '30-Min Rotation',
+                label: 'Azimuthal Shear',
                 getImgName:  (i) => `rotation_${i}.png`,
                 getMetaName: (i) => `metadata_rotation_${i}.json`,
                 legend: [
-                    { label: 'Rotation Track (s\u207b\u00b9)', colors: ['#00ff00','#80ff00','#ffff00','#ff8000','#ff0000','#c00000','#ff00ff','#8000ff'], scale: ['0.003','0.012','0.030','0.050'] }
+                    { label: 'Az Shear (s\u207b\u00b9)', colors: ['#00ff00','#80ff00','#ffff00','#ff8000','#ff0000','#c00000','#ff00ff','#8000ff'], scale: ['0.003','0.012','0.030','0.050'] }
                 ]
             }
         };
