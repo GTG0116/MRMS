@@ -48,9 +48,9 @@ jobs:
           [ -f "public/data/master.png" ]       && mv "public/data/master.png"       "public/data/master_1.png"     || true
           [ -f "public/data/metadata_0.json" ]  && mv "public/data/metadata_0.json"  "public/data/metadata_1.json"  || true
 
-          # --- Single-field products: mesh, qpe6h, qpe24h, refl ---
+          # --- Single-field products: mesh, qpe6h, qpe24h, refl, lightning, rotation ---
           # Shift frames 13→14 down to 0→1 for each product.
-          for product in mesh qpe6h qpe24h refl; do
+          for product in mesh qpe6h qpe24h refl lightning rotation; do
             for i in $(seq 13 -1 0); do
               next=$((i+1))
               [ -f "public/data/${product}_${i}.png" ]             && mv "public/data/${product}_${i}.png"             "public/data/${product}_${next}.png"             || true

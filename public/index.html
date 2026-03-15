@@ -28,7 +28,7 @@
         .legend-label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #888; }
         .color-strip { display: flex; height: 8px; border-radius: 2px; overflow: hidden; width: 120px; border: 1px solid rgba(255,255,255,0.05); }
         .color-block { flex: 1; height: 100%; }
-        .legend-scale { display: flex; justify-content: space-between; font-size: 8px; color: #666; width: 120px; margin-top: 2px; }
+        .legend-scale { display: flex; justify-content: space-between; font-size: 7.5px; color: #aaa; width: 120px; margin-top: 2px; font-family: 'JetBrains Mono', monospace; }
 
         /* --- UI CARD --- */
         .ui-card {
@@ -105,13 +105,18 @@
             </div>
         </div>
 
-        <!-- Product selector -->
+        <!-- Product selector row 1 -->
         <div class="selector-row">
             <button class="selector-btn active" data-product="rate">Precip</button>
             <button class="selector-btn" data-product="refl">Reflectivity</button>
-            <button class="selector-btn" data-product="mesh">MESH</button>
-            <button class="selector-btn" data-product="qpe6h">QPE 6h</button>
-            <button class="selector-btn" data-product="qpe24h">QPE 24h</button>
+            <button class="selector-btn" data-product="mesh">Hail</button>
+            <button class="selector-btn" data-product="qpe6h">6-Hr QPE</button>
+            <button class="selector-btn" data-product="qpe24h">24-Hr QPE</button>
+        </div>
+        <!-- Product selector row 2 -->
+        <div class="selector-row">
+            <button class="selector-btn" data-product="lightning">Lightning</button>
+            <button class="selector-btn" data-product="rotation">Rotation</button>
         </div>
 
         <!-- Map type selector -->
@@ -130,9 +135,9 @@
                 getImgName:  (i) => i === 0 ? 'master.png' : `master_${i}.png`,
                 getMetaName: (i) => `metadata_${i}.json`,
                 legend: [
-                    { label: 'Rain',  colors: ['#00fb90','#00bb00','#008800','#ffff00','#ff9100','#ff0000','#d20000','#910000'], scale: ['Light','Heavy'] },
-                    { label: 'Mix',   colors: ['#ff00ff','#d100d1','#910091','#4b0082'], scale: ['Light','Heavy'] },
-                    { label: 'Snow',  colors: ['#00ffff','#80ffff','#ffffff','#adc5ff','#5a82ff'], scale: ['Light','Heavy'] },
+                    { label: 'Rain (in/hr)',  colors: ['#00fb90','#00cc00','#009900','#006600','#ffff00','#ffcc00','#ff9100','#ff5500','#ff0000','#cc0000'], scale: ['0.01"','0.20"','1.0"','5.0"'] },
+                    { label: 'Ice/Mix',       colors: ['#ff00ff','#d100d1','#910091','#4b0082','#2d004b'], scale: ['Light','Heavy'] },
+                    { label: 'Snow (in/hr)',  colors: ['#00ffff','#80ffff','#ffffff','#adc5ff','#5a82ff'], scale: ['0.004"','0.10"','0.24"'] },
                 ]
             },
             refl: {
@@ -140,31 +145,47 @@
                 getImgName:  (i) => `refl_${i}.png`,
                 getMetaName: (i) => `metadata_refl_${i}.json`,
                 legend: [
-                    { label: 'Reflectivity (dBZ)', colors: ['#646464','#04e9e7','#019ff4','#0300f4','#02fd02','#01c501','#008e00','#fdf802','#e5bc00','#fd9500','#fd0000','#d40000','#bc0000','#f800fd'], scale: ['0','75'] }
+                    { label: 'Reflectivity (dBZ)', colors: ['#646464','#04e9e7','#019ff4','#0300f4','#02fd02','#01c501','#008e00','#fdf802','#e5bc00','#fd9500','#fd0000','#d40000','#bc0000','#f800fd'], scale: ['0','35','55','75'] }
                 ]
             },
             mesh: {
-                label: 'Max Estimated Hail Size',
+                label: 'Hail Size (MESH)',
                 getImgName:  (i) => `mesh_${i}.png`,
                 getMetaName: (i) => `metadata_mesh_${i}.json`,
                 legend: [
-                    { label: 'Hail Size (mm)', colors: ['#c8f500','#ffff00','#ffd700','#ff8c00','#ff4500','#ff0000','#cc0000','#7f0000'], scale: ['5','65'] }
+                    { label: 'Hail Diameter (in)', colors: ['#c8f500','#ffff00','#ffd700','#ff8c00','#ff4500','#ff0000','#cc0000','#7f0000'], scale: ['0.25" Pea','0.75"','1.75" Golf','3.0" Baseball'] }
                 ]
             },
             qpe6h: {
-                label: '6-Hour QPE',
+                label: '6-Hr Precip',
                 getImgName:  (i) => `qpe6h_${i}.png`,
                 getMetaName: (i) => `metadata_qpe6h_${i}.json`,
                 legend: [
-                    { label: '6-Hr Accum (mm)', colors: ['#00fb90','#00cc00','#009900','#006600','#ffff00','#ffcc00','#ff9100','#ff0000'], scale: ['1','200'] }
+                    { label: '6-Hr Accumulation (in)', colors: ['#00fb90','#00cc00','#009900','#006600','#ffff00','#ffcc00','#ff9100','#ff0000'], scale: ['0.05"','0.5"','2.0"','8.0"'] }
                 ]
             },
             qpe24h: {
-                label: '24-Hour QPE',
+                label: '24-Hr Precip',
                 getImgName:  (i) => `qpe24h_${i}.png`,
                 getMetaName: (i) => `metadata_qpe24h_${i}.json`,
                 legend: [
-                    { label: '24-Hr Accum (mm)', colors: ['#00fb90','#00cc00','#009900','#006600','#ffff00','#ffcc00','#ff9100','#ff0000'], scale: ['5','400'] }
+                    { label: '24-Hr Accumulation (in)', colors: ['#00fb90','#00cc00','#009900','#006600','#ffff00','#ffcc00','#ff9100','#ff0000'], scale: ['0.25"','2.0"','6.0"','16"'] }
+                ]
+            },
+            lightning: {
+                label: '1-Hr Lightning',
+                getImgName:  (i) => `lightning_${i}.png`,
+                getMetaName: (i) => `metadata_lightning_${i}.json`,
+                legend: [
+                    { label: '1-Hr CG Lightning Prob (%)', colors: ['#ffffb2','#fed976','#feb24c','#fd8d3c','#fc4e2a','#e31a1c','#bd0026','#800026'], scale: ['5%','30%','60%','90%'] }
+                ]
+            },
+            rotation: {
+                label: '30-Min Rotation',
+                getImgName:  (i) => `rotation_${i}.png`,
+                getMetaName: (i) => `metadata_rotation_${i}.json`,
+                legend: [
+                    { label: 'Rotation Track (s\u207b\u00b9)', colors: ['#00ff00','#80ff00','#ffff00','#ff8000','#ff0000','#c00000','#ff00ff','#8000ff'], scale: ['0.003','0.012','0.030','0.050'] }
                 ]
             }
         };
@@ -231,7 +252,7 @@
                 if (grp.scale) {
                     const scale = document.createElement('div');
                     scale.className = 'legend-scale';
-                    scale.innerHTML = `<span>${grp.scale[0]}</span><span>${grp.scale[1]}</span>`;
+                    scale.innerHTML = grp.scale.map(v => `<span>${v}</span>`).join('');
                     div.appendChild(scale);
                 }
 
