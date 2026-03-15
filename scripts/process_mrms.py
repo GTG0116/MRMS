@@ -195,8 +195,11 @@ SINGLE_PRODUCTS = {
             '#ff00ff',  # 0.030–0.040 s⁻¹ : magenta
             '#8000ff',  # 0.040–0.050 s⁻¹ : purple        (tornadic)
         ],
-        'min_val': 0.002,
-        'max_val': 0.5,
+        # Rotation tracks store signed azimuthal shear (+ cyclonic, − anti-cyclonic).
+        # use_abs=True takes np.abs() so both directions are rendered.
+        'use_abs': True,
+        'min_val': 0.002,   # s⁻¹ — threshold below which rotation is noise
+        'max_val': 1.0,     # s⁻¹ — generous cap; fills are stripped earlier via 1e10 check
         'label': '30-Min Rotation Track (s\u207b\u00b9)',
     },
 }
@@ -538,6 +541,41 @@ def process_frame(rate_key, flag_keys):
                 os.remove(f)
 
 
+def _open_grib2_dataset(tmp_file):
+    """Open a GRIB2 file with cfgrib, falling back to cfgrib.open_datasets for
+    non-standard MRMS products that xr.open_dataset can't handle as a single message."""
+    try:
+        ds = xr.open_dataset(tmp_file, engine="cfgrib", backend_kwargs={'indexpath': ''})
+        if len(ds.data_vars) == 0:
+            raise ValueError("empty dataset from xr.open_dataset")
+        return ds, None
+    except Exception as e_single:
+        # Some MRMS products (e.g. RotationTrack) have GRIB2 messages that cfgrib
+        # can't aggregate into one dataset — try open_datasets and merge the first.
+        try:
+            import cfgrib
+            all_ds = cfgrib.open_datasets(tmp_file, backend_kwargs={'indexpath': ''})
+            if not all_ds:
+                raise ValueError("cfgrib.open_datasets returned no datasets")
+            # Pick the dataset that has data variables
+            ds = next((d for d in all_ds if len(d.data_vars) > 0), None)
+            if ds is None:
+                raise ValueError("no data vars in any cfgrib dataset")
+            # Close the ones we're not using
+            for d in all_ds:
+                if d is not ds:
+                    try:
+                        d.close()
+                    except Exception:
+                        pass
+            return ds, all_ds
+        except Exception as e_multi:
+            raise RuntimeError(
+                f"cfgrib single-dataset failed ({e_single}); "
+                f"multi-dataset fallback also failed ({e_multi})"
+            )
+
+
 def process_single_field_frame(key, product_key, product_cfg):
     """Download, process, and render one frame of a single-field MRMS product.
 
@@ -546,12 +584,13 @@ def process_single_field_frame(key, product_key, product_cfg):
     maintaining a rolling NUM_FRAMES archive.
     """
     tmp_file = f"tmp_{product_key}.grib2"
+    all_ds_refs = None  # track extra cfgrib dataset refs for cleanup
 
     try:
         if not download_and_extract(key, tmp_file):
             return
 
-        ds = xr.open_dataset(tmp_file, engine="cfgrib", backend_kwargs={'indexpath': ''})
+        ds, all_ds_refs = _open_grib2_dataset(tmp_file)
         ds.coords['longitude'] = ((ds.longitude + 180) % 360) - 180
         ds = ds.sortby("latitude", ascending=False).sortby("longitude", ascending=True)
 
@@ -562,17 +601,38 @@ def process_single_field_frame(key, product_key, product_cfg):
         )
         vals = warped.values.astype(float)
 
+        # Diagnostic: show raw data range before any processing
+        raw_finite = vals[np.isfinite(vals)]
+        if raw_finite.size > 0:
+            print(f"  {product_key} raw: min={raw_finite.min():.4g}, "
+                  f"max={raw_finite.max():.4g}, "
+                  f"non-fill pixels={raw_finite.size}")
+        else:
+            print(f"  {product_key} raw: all fill/NaN — file may be empty")
+
+        # Mask obvious GRIB2 fill values (±9.99e+20 and similar) before abs/conversion
+        vals[np.abs(vals) > 1e10] = np.nan
+
+        # For signed products (e.g. rotation track which stores both cyclonic +
+        # and anti-cyclonic − azimuthal shear), take the absolute value so that
+        # both rotation directions are rendered.
+        if product_cfg.get('use_abs', False):
+            vals = np.abs(vals)
+
         # Apply unit conversion if specified (e.g. mm → inches for precip products)
         conversion = product_cfg.get('conversion', 1.0)
         if conversion != 1.0:
             vals = vals * conversion
 
-        # Mask fill values and below-threshold values; anything unrealistically
-        # large is a fill value (MRMS uses 9.99e+20 for missing data).
+        # Mask fill values and below-threshold values.
         # min_val/max_val are in the same units as the (optionally converted) vals.
         min_val = product_cfg['min_val']
         max_val = product_cfg['max_val']
         vals[(vals < min_val) | (vals > max_val)] = np.nan
+
+        n_valid = int(np.sum(~np.isnan(vals)))
+        print(f"  {product_key} after filtering [{min_val}, {max_val}]: "
+              f"{n_valid} valid pixels")
 
         utc_dt = _parse_valid_time(ds, key)
 
@@ -587,7 +647,7 @@ def process_single_field_frame(key, product_key, product_cfg):
         extent    = [LON_LEFT, LON_RIGHT, LAT_BOT, LAT_TOP]
         plot_args = dict(extent=extent, origin='upper', interpolation='none', aspect='auto')
 
-        if np.any(~np.isnan(vals)):
+        if n_valid > 0:
             ax.imshow(vals, cmap=cmap, norm=norm, **plot_args)
 
         img_path  = os.path.join(OUTPUT_DIR, f"{product_key}_0.png")
@@ -611,7 +671,15 @@ def process_single_field_frame(key, product_key, product_cfg):
 
     except Exception as e:
         print(f"  Error processing {product_key}: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
+        if all_ds_refs:
+            for d in all_ds_refs:
+                try:
+                    d.close()
+                except Exception:
+                    pass
         if os.path.exists(tmp_file):
             os.remove(tmp_file)
 
