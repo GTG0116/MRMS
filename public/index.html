@@ -79,6 +79,34 @@
             background: rgba(0, 242, 255, 0.15); color: var(--accent);
             border-color: var(--accent);
         }
+
+        /* --- PIXEL INSPECTOR --- */
+        .pixel-popup .mapboxgl-popup-content {
+            background: rgba(10, 15, 25, 0.97);
+            border: 1px solid var(--accent);
+            border-radius: 10px;
+            padding: 10px 14px;
+            color: white;
+            font-family: 'Inter', sans-serif;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+            min-width: 110px;
+        }
+        .pixel-popup .mapboxgl-popup-close-button {
+            color: #aaa; font-size: 14px; padding: 4px 8px;
+        }
+        .pixel-popup .mapboxgl-popup-close-button:hover { color: #fff; }
+        .pixel-popup .mapboxgl-popup-tip { border-top-color: var(--accent) !important; }
+        .pixel-popup-content { display: flex; flex-direction: column; gap: 3px; }
+        .pixel-label {
+            font-size: 9px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 1px; color: #888;
+        }
+        .pixel-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 15px; color: var(--accent); font-weight: 600;
+        }
+        .pixel-nodata { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #555; }
+        .map-inspect { cursor: crosshair !important; }
     </style>
 </head>
 <body>
@@ -446,6 +474,155 @@
         setActiveBtn('[data-maptype]', `[data-maptype="${savedMapType}"]`);
 
         init();
+
+        // --- PIXEL INSPECTOR ---
+        const INSPECTABLE = ['mesh', 'qpe6h', 'qpe24h', 'lightning', 'rotation'];
+
+        const PIXEL_TABLES = {
+            mesh: {
+                bounds: [0.25, 0.50, 0.75, 1.00, 1.50, 1.75, 2.00, 2.50, 3.00],
+                colors: ['#c8f500','#ffff00','#ffd700','#ff8c00','#ff4500','#ff0000','#cc0000','#7f0000'],
+                unit: 'in', label: 'Hail Size (MESH)'
+            },
+            qpe6h: {
+                bounds: [0.05, 0.25, 0.50, 1.00, 2.00, 3.00, 4.00, 6.00, 8.00],
+                colors: ['#00fb90','#00cc00','#009900','#006600','#ffff00','#ffcc00','#ff9100','#ff0000'],
+                unit: 'in', label: '6-Hr Precip'
+            },
+            qpe24h: {
+                bounds: [0.25, 1.00, 2.00, 3.00, 4.00, 6.00, 8.00, 12.00, 16.00],
+                colors: ['#00fb90','#00cc00','#009900','#006600','#ffff00','#ffcc00','#ff9100','#ff0000'],
+                unit: 'in', label: '24-Hr Precip'
+            },
+            lightning: {
+                bounds: [5, 10, 20, 30, 40, 50, 60, 75, 90],
+                colors: ['#ffffb2','#fed976','#feb24c','#fd8d3c','#fc4e2a','#e31a1c','#bd0026','#800026'],
+                unit: '%', label: 'CG Lightning Prob'
+            },
+            rotation: {
+                bounds: [0.003, 0.005, 0.008, 0.012, 0.016, 0.020, 0.030, 0.040, 0.050],
+                colors: ['#00ff00','#80ff00','#ffff00','#ff8000','#ff0000','#c00000','#ff00ff','#8000ff'],
+                unit: 's⁻¹', label: 'Az Shear'
+            }
+        };
+
+        function hexToRgb(hex) {
+            return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)];
+        }
+
+        function nearestColorIdx(r, g, b, colors) {
+            let best = 0, bestD = Infinity;
+            for (let i = 0; i < colors.length; i++) {
+                const [cr, cg, cb] = hexToRgb(colors[i]);
+                const d = (r-cr)**2 + (g-cg)**2 + (b-cb)**2;
+                if (d < bestD) { bestD = d; best = i; }
+            }
+            return { idx: best, dist: Math.sqrt(bestD) };
+        }
+
+        function latToMerc(lat) {
+            return Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360));
+        }
+
+        const imgCache = {};
+        let pixelPopup = null;
+
+        async function loadImgToCanvas(url) {
+            if (imgCache[url]) return imgCache[url];
+            const img = await new Promise((res, rej) => {
+                const i = new Image();
+                i.crossOrigin = 'anonymous';
+                i.onload = () => res(i);
+                i.onerror = rej;
+                i.src = url;
+            });
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width; canvas.height = img.height;
+            canvas.getContext('2d').drawImage(img, 0, 0);
+            // Limit cache to 15 entries
+            const keys = Object.keys(imgCache);
+            if (keys.length >= 15) delete imgCache[keys[0]];
+            imgCache[url] = canvas;
+            return canvas;
+        }
+
+        function updateInspectCursor() {
+            const el = map.getCanvas();
+            if (INSPECTABLE.includes(currentProduct)) el.classList.add('map-inspect');
+            else el.classList.remove('map-inspect');
+        }
+
+        async function inspectPixel(lngLat) {
+            if (!INSPECTABLE.includes(currentProduct)) return;
+            const frame = frames[currentIndex];
+            if (!frame) return;
+
+            // Pause animation while inspecting
+            if (isPlaying) togglePlay();
+
+            let canvas;
+            try {
+                canvas = await loadImgToCanvas(frame.url);
+            } catch (e) { return; }
+
+            // frame.bounds = [lonLeft, latBot, lonRight, latTop]
+            const [lonLeft, latBot, lonRight, latTop] = frame.bounds;
+            const mercTop = latToMerc(latTop);
+            const mercBot = latToMerc(latBot);
+            const mercCli = latToMerc(lngLat.lat);
+
+            const px = Math.round((lngLat.lng - lonLeft) / (lonRight - lonLeft) * canvas.width);
+            const py = Math.round((mercTop - mercCli) / (mercTop - mercBot) * canvas.height);
+
+            if (pixelPopup) { pixelPopup.remove(); pixelPopup = null; }
+
+            if (px < 0 || px >= canvas.width || py < 0 || py >= canvas.height) return;
+
+            const [r, g, b, a] = canvas.getContext('2d').getImageData(px, py, 1, 1).data;
+
+            if (a < 15) {
+                // Transparent = no data at this location
+                pixelPopup = new mapboxgl.Popup({ closeButton: true, className: 'pixel-popup' })
+                    .setLngLat(lngLat)
+                    .setHTML(`<div class="pixel-popup-content"><span class="pixel-label">${PIXEL_TABLES[currentProduct].label}</span><span class="pixel-nodata">No Data</span></div>`)
+                    .addTo(map);
+                return;
+            }
+
+            const tbl = PIXEL_TABLES[currentProduct];
+            const { idx, dist } = nearestColorIdx(r, g, b, tbl.colors);
+
+            if (dist > 50) return; // color not in table — likely base map pixel
+
+            const lo = tbl.bounds[idx];
+            const hi = tbl.bounds[idx + 1];
+            const valText = hi !== undefined
+                ? `${lo}–${hi} ${tbl.unit}`
+                : `≥${lo} ${tbl.unit}`;
+
+            pixelPopup = new mapboxgl.Popup({ closeButton: true, className: 'pixel-popup' })
+                .setLngLat(lngLat)
+                .setHTML(`<div class="pixel-popup-content"><span class="pixel-label">${tbl.label}</span><span class="pixel-value">${valText}</span></div>`)
+                .addTo(map);
+        }
+
+        map.on('click', (e) => inspectPixel(e.lngLat));
+
+        // Keep cursor updated when switching products
+        const _origSwitchProduct = switchProduct;
+        // Patch switchProduct to also update cursor and clear popup
+        const _patchedSwitchProduct = async (key) => {
+            if (pixelPopup) { pixelPopup.remove(); pixelPopup = null; }
+            Object.keys(imgCache).forEach(k => delete imgCache[k]);
+            await _origSwitchProduct(key);
+            updateInspectCursor();
+        };
+        document.querySelectorAll('[data-product]').forEach(btn => {
+            btn.onclick = () => _patchedSwitchProduct(btn.dataset.product);
+        });
+
+        map.on('load', updateInspectCursor);
+        setTimeout(updateInspectCursor, 500);
     </script>
 </body>
 </html>
